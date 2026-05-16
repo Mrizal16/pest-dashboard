@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Config</title>
+  <link rel="stylesheet" href="config.css" />
+</head>
+<body>
+  <header class="header">
+    <div>
+      <h1>Konfigurasi Sistem</h1>
+      <div class="sub">Simpan ke DB + Publish ke MQTT → ESP32 update realtime</div>
+    </div>
+    <div class="status">
+      <a class="linkbtn" href="/">Dashboard</a>
+    </div>
+  </header>
+
+  <main class="grid">
+    <div class="card span-4">
+      <h2>MQTT Topic</h2>
+      <div id="topicBox">-</div>
+    </div>
+
+    <div class="card span-2">
+      <h2>Waktu Mode</h2>
+      <label>Day Start Hour (0-23) <input id="day_start_hour" type="number" min="0" max="23"></label>
+      <label>Day End Hour (1-24) <input id="day_end_hour" type="number" min="1" max="24"></label>
+    </div>
+
+    <div class="card span-2">
+      <h2>Timing</h2>
+      <label>Warmup (ms) <input id="warmup_ms" type="number" min="0"></label>
+      <label>Debounce (ms) <input id="debounce_ms" type="number" min="0"></label>
+      <label>Cooldown Min (ms) <input id="cooldown_min_ms" type="number" min="0"></label>
+      <label>Cooldown Max (ms) <input id="cooldown_max_ms" type="number" min="0"></label>
+    </div>
+
+    <div class="card span-2">
+      <h2>Servo (Siang)</h2>
+      <label>Servo Idle (0-180) <input id="servo_idle" type="number" min="0" max="180"></label>
+      <label>Day Min Angle <input id="servo_day_min" type="number" min="0" max="180"></label>
+      <label>Day Max Angle <input id="servo_day_max" type="number" min="0" max="180"></label>
+      <label>Move Count Min <input id="day_move_count_min" type="number" min="1"></label>
+      <label>Move Count Max <input id="day_move_count_max" type="number" min="1"></label>
+      <label>Step Delay Min (ms) <input id="day_step_delay_min_ms" type="number" min="10"></label>
+      <label>Step Delay Max (ms) <input id="day_step_delay_max_ms" type="number" min="10"></label>
+    </div>
+
+    <div class="card span-2">
+      <h2>Servo (Malam)</h2>
+      <label>Night Min Angle <input id="servo_night_min" type="number" min="0" max="180"></label>
+      <label>Night Max Angle <input id="servo_night_max" type="number" min="0" max="180"></label>
+      <label>Night Move Count Min <input id="night_move_count_min" type="number" min="1"></label>
+      <label>Night Move Count Max <input id="night_move_count_max" type="number" min="1"></label>
+      <label>Night Step Delay Min (ms) <input id="night_step_delay_min_ms" type="number" min="10"></label>
+      <label>Night Step Delay Max (ms) <input id="night_step_delay_max_ms" type="number" min="10"></label>
+    </div>
+
+    <div class="card span-2">
+      <h2>Buzzer (Malam)</h2>
+      <label>Buzzer ON Min (ms) <input id="buzzer_on_min_ms" type="number" min="10"></label>
+      <label>Buzzer ON Max (ms) <input id="buzzer_on_max_ms" type="number" min="10"></label>
+      <label>Buzzer OFF Min (ms) <input id="buzzer_off_min_ms" type="number" min="10"></label>
+      <label>Buzzer OFF Max (ms) <input id="buzzer_off_max_ms" type="number" min="10"></label>
+    </div>
+
+    <div class="card span-2">
+      <h2>PIR Enabled</h2>
+      <label><input id="pir1" type="checkbox"> PIR Zone 1</label>
+      <label><input id="pir2" type="checkbox"> PIR Zone 2</label>
+      <label><input id="pir3" type="checkbox"> PIR Zone 3</label>
+      <label><input id="pir4" type="checkbox"> PIR Zone 4</label>
+    </div>
+
+    <div class="card span-4">
+      <button id="saveBtn">Simpan & Kirim ke ESP32</button>
+      <button id="reloadBtn">Reload dari Server</button>
+      <div id="statusBox" style="margin-top:10px; opacity:.9;">-</div>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+</body>
+</html>

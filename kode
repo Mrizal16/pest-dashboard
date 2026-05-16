@@ -1,0 +1,644 @@
+#include <Wire.h>
+#include "RTClib.h"
+#include <ESP32Servo.h>
+
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
+
+#include <time.h>  // RTC FIX (NTP)
+
+// ================== WIFI + MQTT CONFIG ==================
+const char* WIFI_SSID = "RZ";
+const char* WIFI_PASS = "11111111";
+
+const char* MQTT_HOST = "broker.hivemq.com";
+const uint16_t MQTT_PORT = 1883;
+
+const char* TOPIC_TELEMETRY = "pearlyyca/rizal/esp32-01/telemetry";
+const char* TOPIC_CONFIG    = "pearlyyca/rizal/esp32-01/config";
+
+// ================== RTC ==================
+RTC_DS3231 rtc;
+
+// ================== PIN ==================
+const uint8_t RCWL_PIN = 14;
+
+// PIR total 4 (zona 1..4)
+const uint8_t PIR_PINS[] = {27, 26, 25, 33};
+const int PIR_COUNT = sizeof(PIR_PINS) / sizeof(PIR_PINS[0]);
+
+const uint8_t SERVO_PIN = 15;
+
+// Relay untuk buzzer
+const uint8_t RELAY_PIN = 32;
+const bool RELAY_ACTIVE_HIGH = false;  // ubah ke false/true kalau relay aktif LOW
+
+// ================== KONFIGURASI (D2) - RUNTIME (BISA DIUBAH VIA MQTT) ==================
+int DAY_START_HOUR = 6;
+int DAY_END_HOUR   = 18;
+
+unsigned long SENSOR_WARMUP_MS = 30000;
+unsigned long DEBOUNCE_MS      = 200;
+unsigned long DEBUG_PRINT_MS   = 1000;
+
+unsigned long COOLDOWN_MIN_MS = 10000;
+unsigned long COOLDOWN_MAX_MS = 20000;
+
+int SERVO_IDLE = 0;
+
+// SIANG
+int SERVO_DAY_MIN = 30;
+int SERVO_DAY_MAX = 120;
+int DAY_MOVE_COUNT_MIN = 3;
+int DAY_MOVE_COUNT_MAX = 7;
+unsigned long DAY_STEP_DELAY_MIN_MS = 150;
+unsigned long DAY_STEP_DELAY_MAX_MS = 600;
+
+// MALAM (servo)
+int SERVO_NIGHT_MIN = 60;
+int SERVO_NIGHT_MAX = 130;
+int NIGHT_MOVE_COUNT_MIN = 3;
+int NIGHT_MOVE_COUNT_MAX = 6;
+unsigned long NIGHT_STEP_DELAY_MIN_MS = 120;
+unsigned long NIGHT_STEP_DELAY_MAX_MS = 450;
+
+// MALAM (pola buzzer)
+unsigned long BUZZER_ON_MIN_MS  = 400;
+unsigned long BUZZER_ON_MAX_MS  = 800;
+unsigned long BUZZER_OFF_MIN_MS = 1000;
+unsigned long BUZZER_OFF_MAX_MS = 2000;
+
+// PIR enable per zona (bisa dimatikan via config)
+bool PIR_ENABLED[4] = {true, true, true, true};
+
+// ================== MQTT CLIENT (PubSubClient) ==================
+WiFiClient wifiClient;
+PubSubClient mqtt(wifiClient);
+
+unsigned long lastWifiAttemptMs = 0;
+unsigned long lastMqttAttemptMs = 0;
+
+// ================== GLOBAL ==================
+Servo motionServo;
+
+unsigned long startMs = 0;
+unsigned long lastDebugMs = 0;
+
+// Debounce RCWL
+bool rcwl_lastRaw = false;
+bool rcwl_lastFiltered = false;
+unsigned long rcwl_lastChangeMs = 0;
+
+// Debounce PIR per zona
+bool pir_lastRaw[8] = {0};
+bool pir_lastFiltered[8] = {0};
+unsigned long pir_lastChangeMs[8] = {0};
+
+// ================== RTC NTP SYNC (WIB) ==================
+bool rtcNtpSynced = false;
+unsigned long lastNtpTryMs = 0;
+
+// ================== STATE MACHINE ==================
+enum State {
+  ST_IDLE,
+  ST_DETECTED,
+  ST_ACTUATE,
+  ST_COOLDOWN
+};
+
+State state = ST_IDLE;
+
+// Event context (telemetry)
+struct EventInfo {
+  uint32_t ts;
+  bool siang;
+  char sensor[8];
+  int zone;
+  char message[32];
+  char actuator[32];
+  unsigned long cooldownMs;
+};
+
+EventInfo evt;
+
+// Actuation runtime vars (non-blocking)
+unsigned long actionNextMs = 0;
+int movesRemaining = 0;
+bool goToIdle = false;
+unsigned long cooldownEndMs = 0;
+
+// Runtime buzzer malam
+bool buzzerIsOn = false;
+unsigned long buzzerNextToggleMs = 0;
+
+// ================== HELPER ==================
+bool isDaytime(const DateTime &now) {
+  int h = now.hour();
+  return (h >= DAY_START_HOUR && h < DAY_END_HOUR);
+}
+
+void servoTo(int angle) {
+  motionServo.write(angle);
+}
+
+void relayOn() {
+  digitalWrite(RELAY_PIN, RELAY_ACTIVE_HIGH ? HIGH : LOW);
+}
+
+void relayOff() {
+  digitalWrite(RELAY_PIN, RELAY_ACTIVE_HIGH ? LOW : HIGH);
+}
+
+unsigned long randRangeUL(unsigned long a, unsigned long b) {
+  if (b <= a) return a;
+  return (unsigned long)random((long)a, (long)b + 1);
+}
+
+int randRangeInt(int a, int b) {
+  if (b <= a) return a;
+  return random(a, b + 1);
+}
+
+// ================== BUZZER NIGHT PATTERN ==================
+void buzzerStartPattern(unsigned long nowMs) {
+  buzzerIsOn = true;
+  relayOn();
+  buzzerNextToggleMs = nowMs + randRangeUL(BUZZER_ON_MIN_MS, BUZZER_ON_MAX_MS);
+}
+
+void buzzerStopPattern() {
+  buzzerIsOn = false;
+  buzzerNextToggleMs = 0;
+  relayOff();
+}
+
+void updateNightBuzzer(unsigned long nowMs) {
+  if (buzzerNextToggleMs == 0 || nowMs < buzzerNextToggleMs) return;
+
+  if (buzzerIsOn) {
+    buzzerIsOn = false;
+    relayOff();
+    buzzerNextToggleMs = nowMs + randRangeUL(BUZZER_OFF_MIN_MS, BUZZER_OFF_MAX_MS);
+  } else {
+    buzzerIsOn = true;
+    relayOn();
+    buzzerNextToggleMs = nowMs + randRangeUL(BUZZER_ON_MIN_MS, BUZZER_ON_MAX_MS);
+  }
+}
+
+// ================== RTC NTP SYNC ==================
+bool syncRtcFromNtp() {
+  // WIB = UTC+7
+  configTime(7 * 3600, 0, "pool.ntp.org", "time.google.com", "time.windows.com");
+
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo, 5000)) {
+    Serial.println("NTP sync gagal (tidak dapat waktu).");
+    return false;
+  }
+
+  DateTime dt(
+    timeinfo.tm_year + 1900,
+    timeinfo.tm_mon + 1,
+    timeinfo.tm_mday,
+    timeinfo.tm_hour,
+    timeinfo.tm_min,
+    timeinfo.tm_sec
+  );
+
+  rtc.adjust(dt);
+  Serial.print("RTC diset dari NTP : ");
+  Serial.printf("%04d-%02d-%02d %02d:%02d:%02d\n",
+                dt.year(), dt.month(), dt.day(),
+                dt.hour(), dt.minute(), dt.second());
+  return true;
+}
+
+// ================== APPLY CONFIG ==================
+void applyConfigJson(const char* json) {
+  StaticJsonDocument<1024> doc;
+  DeserializationError err = deserializeJson(doc, json);
+  if (err) {
+    Serial.print("Config JSON error: ");
+    Serial.println(err.c_str());
+    return;
+  }
+
+  if (doc.containsKey("day_start_hour")) DAY_START_HOUR = doc["day_start_hour"];
+  if (doc.containsKey("day_end_hour"))   DAY_END_HOUR   = doc["day_end_hour"];
+
+  if (doc.containsKey("warmup_ms"))       SENSOR_WARMUP_MS = doc["warmup_ms"];
+  if (doc.containsKey("debounce_ms"))     DEBOUNCE_MS = doc["debounce_ms"];
+  if (doc.containsKey("cooldown_min_ms")) COOLDOWN_MIN_MS = doc["cooldown_min_ms"];
+  if (doc.containsKey("cooldown_max_ms")) COOLDOWN_MAX_MS = doc["cooldown_max_ms"];
+  if (doc.containsKey("servo_idle"))      SERVO_IDLE = doc["servo_idle"];
+
+  if (doc.containsKey("servo_day_min")) SERVO_DAY_MIN = doc["servo_day_min"];
+  if (doc.containsKey("servo_day_max")) SERVO_DAY_MAX = doc["servo_day_max"];
+  if (doc.containsKey("day_move_count_min")) DAY_MOVE_COUNT_MIN = doc["day_move_count_min"];
+  if (doc.containsKey("day_move_count_max")) DAY_MOVE_COUNT_MAX = doc["day_move_count_max"];
+  if (doc.containsKey("day_step_delay_min_ms")) DAY_STEP_DELAY_MIN_MS = doc["day_step_delay_min_ms"];
+  if (doc.containsKey("day_step_delay_max_ms")) DAY_STEP_DELAY_MAX_MS = doc["day_step_delay_max_ms"];
+
+  if (doc.containsKey("servo_night_min")) SERVO_NIGHT_MIN = doc["servo_night_min"];
+  if (doc.containsKey("servo_night_max")) SERVO_NIGHT_MAX = doc["servo_night_max"];
+  if (doc.containsKey("night_move_count_min")) NIGHT_MOVE_COUNT_MIN = doc["night_move_count_min"];
+  if (doc.containsKey("night_move_count_max")) NIGHT_MOVE_COUNT_MAX = doc["night_move_count_max"];
+  if (doc.containsKey("night_step_delay_min_ms")) NIGHT_STEP_DELAY_MIN_MS = doc["night_step_delay_min_ms"];
+  if (doc.containsKey("night_step_delay_max_ms")) NIGHT_STEP_DELAY_MAX_MS = doc["night_step_delay_max_ms"];
+
+  if (doc.containsKey("buzzer_on_min_ms"))  BUZZER_ON_MIN_MS  = doc["buzzer_on_min_ms"];
+  if (doc.containsKey("buzzer_on_max_ms"))  BUZZER_ON_MAX_MS  = doc["buzzer_on_max_ms"];
+  if (doc.containsKey("buzzer_off_min_ms")) BUZZER_OFF_MIN_MS = doc["buzzer_off_min_ms"];
+  if (doc.containsKey("buzzer_off_max_ms")) BUZZER_OFF_MAX_MS = doc["buzzer_off_max_ms"];
+
+  if (doc.containsKey("pir_enabled") && doc["pir_enabled"].is<JsonArray>()) {
+    JsonArray a = doc["pir_enabled"].as<JsonArray>();
+    for (int i = 0; i < 4; i++) {
+      PIR_ENABLED[i] = (i < (int)a.size()) ? (bool)a[i] : true;
+    }
+  }
+
+  if (DAY_START_HOUR < 0) DAY_START_HOUR = 0;
+  if (DAY_START_HOUR > 23) DAY_START_HOUR = 23;
+  if (DAY_END_HOUR < 1) DAY_END_HOUR = 1;
+  if (DAY_END_HOUR > 24) DAY_END_HOUR = 24;
+  if (DAY_END_HOUR <= DAY_START_HOUR) DAY_END_HOUR = DAY_START_HOUR + 1;
+
+  if (COOLDOWN_MAX_MS < COOLDOWN_MIN_MS) COOLDOWN_MAX_MS = COOLDOWN_MIN_MS;
+  if (SERVO_DAY_MAX < SERVO_DAY_MIN) SERVO_DAY_MAX = SERVO_DAY_MIN;
+  if (SERVO_NIGHT_MAX < SERVO_NIGHT_MIN) SERVO_NIGHT_MAX = SERVO_NIGHT_MIN;
+  if (BUZZER_ON_MAX_MS < BUZZER_ON_MIN_MS) BUZZER_ON_MAX_MS = BUZZER_ON_MIN_MS;
+  if (BUZZER_OFF_MAX_MS < BUZZER_OFF_MIN_MS) BUZZER_OFF_MAX_MS = BUZZER_OFF_MIN_MS;
+
+  Serial.println("Config updated from MQTT");
+  Serial.printf("DAY: %d-%d | debounce=%lu | warmup=%lu | cooldown=%lu-%lu\n",
+    DAY_START_HOUR, DAY_END_HOUR, DEBOUNCE_MS, SENSOR_WARMUP_MS, COOLDOWN_MIN_MS, COOLDOWN_MAX_MS
+  );
+  Serial.printf("Buzzer malam ON=%lu-%lu ms | OFF=%lu-%lu ms\n",
+    BUZZER_ON_MIN_MS, BUZZER_ON_MAX_MS, BUZZER_OFF_MIN_MS, BUZZER_OFF_MAX_MS
+  );
+}
+
+// ================== WIFI + MQTT ==================
+void setupWifi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.persistent(false);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  Serial.println("Connecting WiFi...");
+}
+
+void ensureWifiConnected(unsigned long nowMs) {
+  if (WiFi.status() == WL_CONNECTED) return;
+  if (nowMs - lastWifiAttemptMs < 10000) return;
+  lastWifiAttemptMs = nowMs;
+
+  Serial.println("WiFi reconnect...");
+  WiFi.disconnect();
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+}
+
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  if (strcmp(topic, TOPIC_CONFIG) != 0) return;
+
+  static char buf[900];
+  unsigned int n = (length < sizeof(buf) - 1) ? length : sizeof(buf) - 1;
+  memcpy(buf, payload, n);
+  buf[n] = '\0';
+
+  Serial.print("Config received: ");
+  Serial.println(buf);
+
+  applyConfigJson(buf);
+}
+
+void setupMqtt() {
+  mqtt.setServer(MQTT_HOST, MQTT_PORT);
+  mqtt.setBufferSize(900);
+  mqtt.setKeepAlive(30);
+  mqtt.setCallback(mqttCallback);
+}
+
+void ensureMqttConnected(unsigned long nowMs) {
+  if (WiFi.status() != WL_CONNECTED) return;
+  if (mqtt.connected()) return;
+  if (nowMs - lastMqttAttemptMs < 5000) return;
+  lastMqttAttemptMs = nowMs;
+
+  uint64_t chipid = ESP.getEfuseMac();
+  char clientId[40];
+  snprintf(clientId, sizeof(clientId), "esp32-%04X%08X",
+           (uint16_t)(chipid >> 32), (uint32_t)chipid);
+
+  Serial.print("Trying MQTT connect, clientId=");
+  Serial.println(clientId);
+
+  bool ok = mqtt.connect(clientId);
+  Serial.println(ok ? "MQTT CONNECTED!" : "MQTT CONNECT FAILED");
+
+  if (ok) {
+    mqtt.subscribe(TOPIC_CONFIG, 1);
+    Serial.print("Subscribed config topic: ");
+    Serial.println(TOPIC_CONFIG);
+  }
+}
+
+// ================== TELEMETRY ==================
+void publishTelemetry(const DateTime& now) {
+  if (!mqtt.connected()) {
+    Serial.println("Telemetry skipped (MQTT not connected)");
+    return;
+  }
+
+  char timeStr[16];
+  snprintf(timeStr, sizeof(timeStr), "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
+
+  char dateStr[16];
+  snprintf(dateStr, sizeof(dateStr), "%04d-%02d-%02d", now.year(), now.month(), now.day());
+
+  int rssi = (WiFi.status() == WL_CONNECTED) ? WiFi.RSSI() : -999;
+
+  char payload[520];
+  snprintf(payload, sizeof(payload),
+    "{"
+      "\"ts\":%u,"
+      "\"date\":\"%s\","
+      "\"time\":\"%s\","
+      "\"mode\":\"%s\","
+      "\"sensor\":\"%s\","
+      "\"zone\":%d,"
+      "\"message\":\"%s\","
+      "\"actuator\":\"%s\","
+      "\"cooldown_ms\":%lu,"
+      "\"rssi\":%d"
+    "}",
+    evt.ts, dateStr, timeStr,
+    evt.siang ? "SIANG" : "MALAM",
+    evt.sensor, evt.zone,
+    evt.message, evt.actuator,
+    (unsigned long)evt.cooldownMs,
+    rssi
+  );
+
+  bool ok = mqtt.publish(TOPIC_TELEMETRY, payload, false);
+  Serial.print("MQTT TELEMETRY publish=");
+  Serial.println(ok ? "OK" : "FAIL");
+  Serial.println(payload);
+}
+
+// ================== DETEKSI + DEBOUNCE + RISING EDGE ==================
+bool motionRising(bool siang, unsigned long nowMs, int &zoneOut, const char* &sensorOut) {
+  if (siang) {
+    bool raw = digitalRead(RCWL_PIN);
+
+    if (raw != rcwl_lastRaw) {
+      rcwl_lastRaw = raw;
+      rcwl_lastChangeMs = nowMs;
+    }
+
+    bool filtered = rcwl_lastRaw && (nowMs - rcwl_lastChangeMs >= DEBOUNCE_MS);
+    bool rising = filtered && !rcwl_lastFiltered;
+    rcwl_lastFiltered = filtered;
+
+    if (rising) {
+      zoneOut = 1;
+      sensorOut = "RCWL";
+      return true;
+    }
+    return false;
+  } else {
+    for (int i = 0; i < PIR_COUNT; i++) {
+      if (!PIR_ENABLED[i]) continue;
+
+      bool raw = digitalRead(PIR_PINS[i]);
+
+      if (raw != pir_lastRaw[i]) {
+        pir_lastRaw[i] = raw;
+        pir_lastChangeMs[i] = nowMs;
+      }
+
+      bool filtered = pir_lastRaw[i] && (nowMs - pir_lastChangeMs[i] >= DEBOUNCE_MS);
+      bool rising = filtered && !pir_lastFiltered[i];
+      pir_lastFiltered[i] = filtered;
+
+      if (rising) {
+        zoneOut = i + 1;
+        sensorOut = "PIR";
+        return true;
+      }
+    }
+    return false;
+  }
+}
+
+// ================== STATE TRANSITION ==================
+void enterIdle() {
+  buzzerStopPattern();
+  state = ST_IDLE;
+}
+
+void enterDetected(const DateTime& now, bool siang, const char* sensorName, int zone) {
+  state = ST_DETECTED;
+
+  evt.ts = now.unixtime();
+  evt.siang = siang;
+
+  strncpy(evt.sensor, sensorName, sizeof(evt.sensor) - 1);
+  evt.sensor[sizeof(evt.sensor) - 1] = '\0';
+
+  evt.zone = zone;
+
+  strncpy(evt.message, "GERAK_TERDETEKSI", sizeof(evt.message) - 1);
+  evt.message[sizeof(evt.message) - 1] = '\0';
+}
+
+void enterActuate(unsigned long nowMs) {
+  state = ST_ACTUATE;
+
+  if (evt.siang) {
+    buzzerStopPattern();
+
+    strncpy(evt.actuator, "SERVO_SIANG", sizeof(evt.actuator) - 1);
+    evt.actuator[sizeof(evt.actuator) - 1] = '\0';
+
+    movesRemaining = randRangeInt(DAY_MOVE_COUNT_MIN, DAY_MOVE_COUNT_MAX);
+    goToIdle = false;
+    actionNextMs = nowMs;
+  } else {
+    strncpy(evt.actuator, "SERVO_BUZZER_MALAM", sizeof(evt.actuator) - 1);
+    evt.actuator[sizeof(evt.actuator) - 1] = '\0';
+
+    movesRemaining = randRangeInt(NIGHT_MOVE_COUNT_MIN, NIGHT_MOVE_COUNT_MAX);
+    goToIdle = false;
+    actionNextMs = nowMs;
+
+    buzzerStartPattern(nowMs);
+  }
+}
+
+void enterCooldown(unsigned long nowMs, unsigned long cooldownMs) {
+  buzzerStopPattern();
+
+  state = ST_COOLDOWN;
+  evt.cooldownMs = cooldownMs;
+  cooldownEndMs = nowMs + cooldownMs;
+
+  DateTime now = rtc.now();
+  publishTelemetry(now);
+}
+
+// ================== ACTUATION (NON-BLOCKING) ==================
+bool runActuation(unsigned long nowMs) {
+  if (movesRemaining <= 0) {
+    servoTo(SERVO_IDLE);
+    return true;
+  }
+
+  // Buzzer malam jalan paralel dengan servo
+  if (!evt.siang) {
+    updateNightBuzzer(nowMs);
+  }
+
+  if (nowMs < actionNextMs) return false;
+
+  if (evt.siang) {
+    if (!goToIdle) {
+      int angle = randRangeInt(SERVO_DAY_MIN, SERVO_DAY_MAX);
+      servoTo(angle);
+      goToIdle = true;
+      actionNextMs = nowMs + randRangeUL(DAY_STEP_DELAY_MIN_MS, DAY_STEP_DELAY_MAX_MS);
+    } else {
+      servoTo(SERVO_IDLE);
+      goToIdle = false;
+      movesRemaining--;
+      actionNextMs = nowMs + randRangeUL(DAY_STEP_DELAY_MIN_MS, DAY_STEP_DELAY_MAX_MS);
+    }
+  } else {
+    if (!goToIdle) {
+      int angle = randRangeInt(SERVO_NIGHT_MIN, SERVO_NIGHT_MAX);
+      servoTo(angle);
+      goToIdle = true;
+      actionNextMs = nowMs + randRangeUL(NIGHT_STEP_DELAY_MIN_MS, NIGHT_STEP_DELAY_MAX_MS);
+    } else {
+      servoTo(SERVO_IDLE);
+      goToIdle = false;
+      movesRemaining--;
+      actionNextMs = nowMs + randRangeUL(NIGHT_STEP_DELAY_MIN_MS, NIGHT_STEP_DELAY_MAX_MS);
+    }
+  }
+
+  return false;
+}
+
+// ================== SETUP ==================
+void setup() {
+  Serial.begin(115200);
+  delay(300);
+
+  randomSeed(esp_random());
+
+  // ESP32 default I2C: SDA=21, SCL=22
+  Wire.begin(21, 22);
+
+  if (!rtc.begin()) {
+    Serial.println("RTC tidak ditemukan!");
+    while (1) delay(1000);
+  }
+
+  if (rtc.lostPower()) {
+    Serial.println("RTC lost power! Set dari waktu compile dulu...");
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  }
+
+  pinMode(RCWL_PIN, INPUT);
+  for (int i = 0; i < PIR_COUNT; i++) {
+    pinMode(PIR_PINS[i], INPUT);
+  }
+
+  pinMode(RELAY_PIN, OUTPUT);
+  buzzerStopPattern();
+
+  motionServo.attach(SERVO_PIN, 500, 2400);
+  servoTo(SERVO_IDLE);
+
+  setupWifi();
+  setupMqtt();
+
+  startMs = millis();
+  Serial.println("Sistem siap: 4x PIR + Servo + Relay Buzzer + MQTT + Config(D2) via MQTT (PubSubClient).");
+}
+
+// ================== LOOP ==================
+void loop() {
+  unsigned long nowMs = millis();
+
+  ensureWifiConnected(nowMs);
+
+  // coba sync NTP setelah WiFi konek (retry tiap 10 detik sampai sukses)
+  if (WiFi.status() == WL_CONNECTED && !rtcNtpSynced) {
+    if (nowMs - lastNtpTryMs > 10000) {
+      lastNtpTryMs = nowMs;
+      rtcNtpSynced = syncRtcFromNtp();
+    }
+  }
+
+  ensureMqttConnected(nowMs);
+  mqtt.loop();
+
+  if (nowMs - lastDebugMs >= DEBUG_PRINT_MS) {
+    lastDebugMs = nowMs;
+    DateTime now = rtc.now();
+    bool siang = isDaytime(now);
+
+    Serial.printf("%04d-%02d-%02d %02d:%02d:%02d | %s | State=%d | WiFi=%s | MQTT=%s | NTP=%s | PIR_EN=%d%d%d%d | Buzzer=%s\n",
+      now.year(), now.month(), now.day(),
+      now.hour(), now.minute(), now.second(),
+      siang ? "SIANG" : "MALAM",
+      (int)state,
+      WiFi.status() == WL_CONNECTED ? "OK" : "NO",
+      mqtt.connected() ? "OK" : "NO",
+      rtcNtpSynced ? "OK" : "NO",
+      PIR_ENABLED[0], PIR_ENABLED[1], PIR_ENABLED[2], PIR_ENABLED[3],
+      buzzerIsOn ? "ON" : "OFF"
+    );
+  }
+
+  if (nowMs - startMs < SENSOR_WARMUP_MS) return;
+
+  DateTime now = rtc.now();
+  bool siang = isDaytime(now);
+
+  switch (state) {
+    case ST_IDLE: {
+      int zone = -1;
+      const char* sensorName = "";
+      if (motionRising(siang, nowMs, zone, sensorName)) {
+        enterDetected(now, siang, sensorName, zone);
+      }
+      break;
+    }
+
+    case ST_DETECTED: {
+      enterActuate(nowMs);
+      break;
+    }
+
+    case ST_ACTUATE: {
+      bool done = runActuation(nowMs);
+      if (done) {
+        unsigned long cd = randRangeUL(COOLDOWN_MIN_MS, COOLDOWN_MAX_MS);
+        enterCooldown(nowMs, cd);
+      }
+      break;
+    }
+
+    case ST_COOLDOWN: {
+      if (nowMs >= cooldownEndMs) {
+        enterIdle();
+      }
+      break;
+    }
+  }
+}

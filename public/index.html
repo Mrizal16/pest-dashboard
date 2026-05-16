@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dashboard Pengusir Hama (DFD)</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <header class="header">
+    <div>
+      <h1>Monitoring Dashboard</h1>
+      <div class="sub">Jumlah harian • Akumulasi bulanan • Grafik 7 hari • Grafik 6 bulan • Komposisi • Log terbaru</div>
+    </div>
+    <div class="status">
+      <a class="linkbtn" href="/config.html">Pengaturan</a>
+      <span id="conn">Realtime: -</span>
+      <span id="last">Last: -</span>
+    </div>
+  </header>
+
+  <section class="controls">
+    <label>
+      Grafik Harian (hari terakhir):
+      <select id="days">
+        <option value="7" selected>7</option>
+        <option value="14">14</option>
+        <option value="30">30</option>
+      </select>
+    </label>
+
+    <label>
+      Grafik Bulanan (bulan terakhir):
+      <select id="months">
+        <option value="3">3</option>
+        <option value="6" selected>6</option>
+        <!-- <option value="12">12</option> -->
+      </select>
+    </label>
+
+    <label>
+      Log terbaru:
+      <select id="latest">
+        <option value="25">25</option>
+        <option value="50" selected>50</option>
+        <option value="100">100</option>
+      </select>
+    </label>
+
+    <button id="refresh"><!-- Refresh --></button>
+  </section>
+
+  <main class="grid">
+    <!-- KPI sesuai DFD -->
+    <div class="card kpi">
+      <div class="kpi-title">Jumlah Deteksi Harian (Hari Ini • WIB)</div>
+      <div class="kpi-value" id="kpiTodayTotal">0</div>
+      <div class="kpi-sub" id="kpiTodayBreak">SIANG 0 • MALAM 0</div>
+    </div>
+
+    <div class="card kpi">
+      <div class="kpi-title">Akumulasi Bulanan (Bulan Ini • WIB)</div>
+      <div class="kpi-value" id="kpiMonthTotal">0</div>
+      <div class="kpi-sub" id="kpiMonthBreak">SIANG 0 • MALAM 0</div>
+    </div>
+
+    <div class="card kpi">
+      <div class="kpi-title">Total Deteksi (Semua Data)</div>
+      <div class="kpi-value" id="kpiTotal">0</div>
+      <div class="kpi-sub">Total seluruh event tersimpan</div>
+    </div>
+
+    <!-- Grafik 7 hari terakhir -->
+    <div class="card span-2">
+      <h2>Grafik 7 Hari Terakhir (Total, SIANG, MALAM)</h2>
+      <canvas id="chart7d"></canvas>
+    </div>
+
+    <!-- Grafik 6 bulan terakhir -->
+    <div class="card span-2">
+      <h2>Grafik 6 Bulan Terakhir (Stacked SIANG/MALAM + Total)</h2>
+      <canvas id="chart6m"></canvas>
+    </div>
+
+    <!-- Komposisi deteksi -->
+    <div class="card">
+      <h2>Komposisi Deteksi (Mode)</h2>
+      <canvas id="chartMode"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>Komposisi Deteksi (Zona)</h2>
+      <canvas id="chartZone"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>Komposisi Deteksi (Sensor)</h2>
+      <canvas id="chartSensor"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>Komposisi Deteksi (Aktuator)</h2>
+      <canvas id="chartActuator"></canvas>
+    </div>
+
+    <!-- Log terbaru -->
+    <div class="card span-4">
+      <h2>Log Deteksi Terbaru (Timestamp • Mode • Sensor • Aktuator • RSSI)</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Datetime (WIB)</th>
+              <th>TS</th>
+              <th>Mode</th>
+              <th>Sensor</th>
+              <th>Zona</th>
+              <th>Message</th>
+              <th>Aktuator</th>
+              <th>Cooldown (ms)</th>
+              <th>RSSI</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
