@@ -350,3 +350,9 @@ tbody tr:hover {
     min-width: 900px;
   }
 }
+
+.card hr {
+  border: none;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  margin: 18px 0;
+}
