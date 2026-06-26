@@ -476,18 +476,18 @@ function fmtWibDateTimeFromUtcEpoch(utcEpoch) {
             total:0
         };
 
-        for(let i=0;i<22;i++){
+        for (let i = 0; i < 24; i++) {
 
-            const total=
-                arr[i]+
-                arr[i+1]+
-                arr[i+2];
+            const total =
+                arr[i] +
+                arr[(i + 1) % 24] +
+                arr[(i + 2) % 24];
 
-            if(total>best.total){
+            if (total > best.total) {
 
-                best={
-                    start:i,
-                    end:i+2,
+                best = {
+                    start: i,
+                    end: (i + 2) % 24,
                     total
                 };
 
@@ -859,7 +859,7 @@ app.get("/api/dashboard", async (req, res) => {
       latest,
 
       recommendation
-      
+
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
