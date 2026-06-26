@@ -433,6 +433,83 @@ function fmtWibDateTimeFromUtcEpoch(utcEpoch) {
     .replace("T", " ");
 }
 
+  async function getRecommendation() {
+
+    const birdRows = await dbAll(`
+      SELECT
+        HOUR(FROM_UNIXTIME(ts + ?)) AS hour,
+        COUNT(*) AS total
+      FROM events
+      WHERE mode='SIANG'
+        AND DATE(FROM_UNIXTIME(ts + ?))
+        =
+        DATE(DATE_SUB(CONVERT_TZ(NOW(),'+00:00','+07:00'),INTERVAL 1 DAY))
+      GROUP BY hour
+      ORDER BY hour
+    `,[TZ_OFFSET_SEC,TZ_OFFSET_SEC]);
+
+    const ratRows = await dbAll(`
+      SELECT
+        HOUR(FROM_UNIXTIME(ts + ?)) AS hour,
+        COUNT(*) AS total
+      FROM events
+      WHERE mode='MALAM'
+        AND DATE(FROM_UNIXTIME(ts + ?))
+        =
+        DATE(DATE_SUB(CONVERT_TZ(NOW(),'+00:00','+07:00'),INTERVAL 1 DAY))
+      GROUP BY hour
+      ORDER BY hour
+    `,[TZ_OFFSET_SEC,TZ_OFFSET_SEC]);
+
+
+    function bestWindow(rows){
+
+        const arr=new Array(24).fill(0);
+
+        rows.forEach(r=>{
+            arr[Number(r.hour)] = Number(r.total);
+        });
+
+        let best={
+            start:0,
+            end:2,
+            total:0
+        };
+
+        for(let i=0;i<22;i++){
+
+            const total=
+                arr[i]+
+                arr[i+1]+
+                arr[i+2];
+
+            if(total>best.total){
+
+                best={
+                    start:i,
+                    end:i+2,
+                    total
+                };
+
+            }
+
+        }
+
+        return best;
+
+    }
+
+
+    return{
+
+        bird:bestWindow(birdRows),
+
+        rat:bestWindow(ratRows)
+
+    };
+
+  }
+
 // ============ WHATSAPP SUMMARY 1 JAM ============
 function pickTop(rows, fallback = "-") {
   if (!Array.isArray(rows) || rows.length === 0) return fallback;
@@ -764,6 +841,9 @@ app.get("/api/dashboard", async (req, res) => {
       `,
       [TZ_OFFSET_SEC, latestLimit]
     );
+    
+    const recommendation =
+      await getRecommendation();
 
     res.json({
       meta: { days, months, tz: "WIB" },
@@ -777,6 +857,9 @@ app.get("/api/dashboard", async (req, res) => {
         actuator: compActuator,
       },
       latest,
+
+      recommendation
+      
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
