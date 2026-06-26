@@ -18,6 +18,47 @@ function setKPI(kpi) {
   document.getElementById("kpiTotal").textContent = kpi.total;
 }
 
+function fmtHour(h) {
+  return String(h).padStart(2, "0") + ":00";
+}
+
+function renderRecommendation(rec) {
+
+  const birdRec = document.getElementById("birdRec");
+  const ratRec = document.getElementById("ratRec");
+
+  if (rec.bird.total > 0) {
+    birdRec.innerHTML = `
+      <h3>🐦 Burung</h3>
+      <p><b>🕒 ${fmtHour(rec.bird.start)} - ${fmtHour(rec.bird.end)}</b></p>
+      <p>📊 ${rec.bird.total} deteksi</p>
+      <small>Disarankan melakukan pengecekan sawah pada rentang waktu tersebut.</small>
+    `;
+  } else {
+    birdRec.innerHTML = `
+      <h3>🐦 Burung</h3>
+      <p>Belum tersedia rekomendasi.</p>
+      <small>Menunggu data deteksi hari sebelumnya.</small>
+    `;
+  }
+
+  if (rec.rat.total > 0) {
+    ratRec.innerHTML = `
+      <h3>🐀 Tikus</h3>
+      <p><b>🕒 ${fmtHour(rec.rat.start)} - ${fmtHour(rec.rat.end)}</b></p>
+      <p>📊 ${rec.rat.total} deteksi</p>
+      <small>Disarankan melakukan pengecekan sawah pada rentang waktu tersebut.</small>
+    `;
+  } else {
+    ratRec.innerHTML = `
+      <h3>🐀 Tikus</h3>
+      <p>Belum tersedia rekomendasi.</p>
+      <small>Menunggu data deteksi hari sebelumnya.</small>
+    `;
+  }
+
+}
+
 function renderTable(rows) {
   const tbody = document.getElementById("tbody");
   tbody.innerHTML = "";
