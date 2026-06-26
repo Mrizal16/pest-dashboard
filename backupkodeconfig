@@ -32,37 +32,32 @@ function fillForm(cfg) {
 
   setVal("warmup_ms", fallback(cfg.warmup_ms, 30000));
   setVal("debounce_ms", fallback(cfg.debounce_ms, 200));
-
-  // cooldown
-  setVal("cooldown_min_ms", fallback(cfg.cooldown_min_ms, 5000));
-  setVal("cooldown_max_ms", fallback(cfg.cooldown_max_ms, 8000));
+  setVal("cooldown_min_ms", fallback(cfg.cooldown_min_ms, 10000));
+  setVal("cooldown_max_ms", fallback(cfg.cooldown_max_ms, 20000));
 
   setVal("servo_idle", fallback(cfg.servo_idle, 0));
 
-  // ================= SIANG =================
-  setVal("servo_day_min", fallback(cfg.servo_day_min, 20));
-  setVal("servo_day_max", fallback(cfg.servo_day_max, 140));
-  setVal("day_move_count_min", fallback(cfg.day_move_count_min, 30));
-  setVal("day_move_count_max", fallback(cfg.day_move_count_max, 38));
-  setVal("day_step_delay_min_ms", fallback(cfg.day_step_delay_min_ms, 70));
-  setVal("day_step_delay_max_ms", fallback(cfg.day_step_delay_max_ms, 120));
+  setVal("servo_day_min", fallback(cfg.servo_day_min, 30));
+  setVal("servo_day_max", fallback(cfg.servo_day_max, 120));
+  setVal("day_move_count_min", fallback(cfg.day_move_count_min, 3));
+  setVal("day_move_count_max", fallback(cfg.day_move_count_max, 7));
+  setVal("day_step_delay_min_ms", fallback(cfg.day_step_delay_min_ms, 150));
+  setVal("day_step_delay_max_ms", fallback(cfg.day_step_delay_max_ms, 600));
 
-  // ================= MALAM =================
-  // tetap kompatibel kalau backend/config lama masih punya servo_night_angle
+  // support config lama yang masih punya servo_night_angle
   const oldNightAngle = fallback(cfg.servo_night_angle, 90);
 
-  setVal("servo_night_min", fallback(cfg.servo_night_min, 25));
-  setVal("servo_night_max", fallback(cfg.servo_night_max, 145));
-  setVal("night_move_count_min", fallback(cfg.night_move_count_min, 34));
-  setVal("night_move_count_max", fallback(cfg.night_move_count_max, 42));
-  setVal("night_step_delay_min_ms", fallback(cfg.night_step_delay_min_ms, 70));
-  setVal("night_step_delay_max_ms", fallback(cfg.night_step_delay_max_ms, 120));
+  setVal("servo_night_min", fallback(cfg.servo_night_min, oldNightAngle));
+  setVal("servo_night_max", fallback(cfg.servo_night_max, oldNightAngle));
+  setVal("night_move_count_min", fallback(cfg.night_move_count_min, 3));
+  setVal("night_move_count_max", fallback(cfg.night_move_count_max, 6));
+  setVal("night_step_delay_min_ms", fallback(cfg.night_step_delay_min_ms, 120));
+  setVal("night_step_delay_max_ms", fallback(cfg.night_step_delay_max_ms, 450));
 
-  // ================= BUZZER =================
-  setVal("buzzer_on_min_ms", fallback(cfg.buzzer_on_min_ms, 2200));
-  setVal("buzzer_on_max_ms", fallback(cfg.buzzer_on_max_ms, 3200));
-  setVal("buzzer_off_min_ms", fallback(cfg.buzzer_off_min_ms, 180));
-  setVal("buzzer_off_max_ms", fallback(cfg.buzzer_off_max_ms, 350));
+  setVal("buzzer_on_min_ms", fallback(cfg.buzzer_on_min_ms, 400));
+  setVal("buzzer_on_max_ms", fallback(cfg.buzzer_on_max_ms, 800));
+  setVal("buzzer_off_min_ms", fallback(cfg.buzzer_off_min_ms, 1000));
+  setVal("buzzer_off_max_ms", fallback(cfg.buzzer_off_max_ms, 2000));
 
   const pe = cfg.pir_enabled || [true, true, true, true];
   setCheck("pir1", pe[0]);
