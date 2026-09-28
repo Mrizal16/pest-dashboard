@@ -1,153 +1,454 @@
+
 <!doctype html>
 <html lang="id">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <title>Dashboard Pengusir Hama</title>
+
   <link rel="stylesheet" href="style.css" />
+
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
+
 <body>
+
+  <!-- =========================
+       HEADER
+  ========================== -->
   <header class="header">
-    <div>
+
+    <div class="header-left">
+      <span class="header-label">PEST MONITORING SYSTEM</span>
+
       <h1>Monitoring Dashboard</h1>
-      <div class="sub">Jumlah harian • Akumulasi bulanan • Grafik 7 hari • Grafik 6 bulan • Komposisi • Log terbaru</div>
+
+      <p class="sub">
+        Monitoring deteksi hama, aktivitas sensor, dan performa sistem secara realtime.
+      </p>
     </div>
+
     <div class="status">
-      <a class="linkbtn" href="/config.html">Pengaturan</a>
-      <span id="conn">Realtime: -</span>
-      <span id="last">Last: -</span>
+
+      <a class="linkbtn" href="/config.html">
+        Pengaturan
+      </a>
+
+      <div class="status-item">
+        <span class="status-dot"></span>
+        <span id="conn">Realtime: -</span>
+      </div>
+
+      <div class="status-item">
+        <span id="last">Last: -</span>
+      </div>
+
     </div>
+
   </header>
 
+
+  <!-- =========================
+       FILTER
+  ========================== -->
   <section class="controls">
-    <label>
-      Grafik Harian (hari terakhir):
-      <select id="days">
-        <option value="7" selected>7</option>
-        <option value="14">14</option>
-        <option value="30">30</option>
-      </select>
-    </label>
 
-    <label>
-      Grafik Bulanan (bulan terakhir):
-      <select id="months">
-        <option value="3">3</option>
-        <option value="6" selected>6</option>
-        <!-- <option value="12">12</option> -->
-      </select>
-    </label>
+    <div class="controls-heading">
+      <span>Filter Data</span>
+      <small>Atur rentang data yang ingin ditampilkan</small>
+    </div>
 
-    <label>
-      Log terbaru:
-      <select id="latest">
-        <option value="25">25</option>
-        <option value="50" selected>50</option>
-        <option value="100">100</option>
-      </select>
-    </label>
+    <div class="control-group">
 
-    <button id="refresh"><!-- Refresh --></button>
+      <label>
+        Grafik Harian
+
+        <select id="days">
+          <option value="7" selected>7 Hari</option>
+          <option value="14">14 Hari</option>
+          <option value="30">30 Hari</option>
+        </select>
+      </label>
+
+      <label>
+        Grafik Bulanan
+
+        <select id="months">
+          <option value="3">3 Bulan</option>
+          <option value="6" selected>6 Bulan</option>
+        </select>
+      </label>
+
+      <label>
+        Log Terbaru
+
+        <select id="latest">
+          <option value="25">25 Data</option>
+          <option value="50" selected>50 Data</option>
+          <option value="100">100 Data</option>
+        </select>
+      </label>
+
+      <button id="refresh">
+        Refresh Data
+      </button>
+
+    </div>
+
   </section>
 
+
+  <!-- =========================
+       CONTENT
+  ========================== -->
   <main class="grid">
-    <!-- KPI sesuai DFD -->
-    <div class="card kpi">
-      <div class="kpi-title">Jumlah Deteksi Harian (Hari Ini • WIB)</div>
-      <div class="kpi-value" id="kpiTodayTotal">0</div>
-      <div class="kpi-sub" id="kpiTodayBreak">SIANG 0 • MALAM 0</div>
-    </div>
+
+
+    <!-- =========================
+         KPI
+    ========================== -->
 
     <div class="card kpi">
-      <div class="kpi-title">Akumulasi Bulanan (Bulan Ini • WIB)</div>
-      <div class="kpi-value" id="kpiMonthTotal">0</div>
-      <div class="kpi-sub" id="kpiMonthBreak">SIANG 0 • MALAM 0</div>
+
+      <div class="kpi-top">
+        <span class="kpi-title">
+          Deteksi Hari Ini
+        </span>
+
+        <span class="kpi-badge">
+          WIB
+        </span>
+      </div>
+
+      <div class="kpi-value" id="kpiTodayTotal">
+        0
+      </div>
+
+      <div class="kpi-sub" id="kpiTodayBreak">
+        SIANG 0 • MALAM 0
+      </div>
+
     </div>
+
 
     <div class="card kpi">
-      <div class="kpi-title">Total Deteksi (Semua Data)</div>
-      <div class="kpi-value" id="kpiTotal">0</div>
-      <div class="kpi-sub">Total seluruh event tersimpan</div>
+
+      <div class="kpi-top">
+        <span class="kpi-title">
+          Deteksi Bulan Ini
+        </span>
+
+        <span class="kpi-badge">
+          BULANAN
+        </span>
+      </div>
+
+      <div class="kpi-value" id="kpiMonthTotal">
+        0
+      </div>
+
+      <div class="kpi-sub" id="kpiMonthBreak">
+        SIANG 0 • MALAM 0
+      </div>
+
     </div>
 
-    <div class="card span-4">
-      <h2>📅 Rekomendasi Waktu Pengecekan Sawah</h2>
+
+    <div class="card kpi">
+
+      <div class="kpi-top">
+        <span class="kpi-title">
+          Total Seluruh Deteksi
+        </span>
+
+        <span class="kpi-badge">
+          DATABASE
+        </span>
+      </div>
+
+      <div class="kpi-value" id="kpiTotal">
+        0
+      </div>
+
+      <div class="kpi-sub">
+        Total seluruh event yang tersimpan
+      </div>
+
+    </div>
+
+
+    <!-- =========================
+         RECOMMENDATION
+    ========================== -->
+
+    <div class="card span-4 recommendation-section">
+
+      <div class="section-header">
+
+        <div>
+          <span class="section-label">
+            FIELD RECOMMENDATION
+          </span>
+
+          <h2>
+            Rekomendasi Waktu Pengecekan Sawah
+          </h2>
+        </div>
+
+        <span class="section-info">
+          Berdasarkan data deteksi sebelumnya
+        </span>
+
+      </div>
+
 
       <div class="recommendation-grid">
 
+
         <div id="birdRec" class="recommendation-box">
-          <h3>🐦 Burung</h3>
-          <p>Belum tersedia rekomendasi.</p>
-          <small>Menunggu data deteksi hari sebelumnya.</small>
+
+          <div class="recommendation-icon">
+            B
+          </div>
+
+          <div class="recommendation-content">
+
+            <span class="recommendation-label">
+              DETEKSI BURUNG
+            </span>
+
+            <h3>
+              Burung
+            </h3>
+
+            <p>
+              Belum tersedia rekomendasi.
+            </p>
+
+            <small>
+              Menunggu data deteksi hari sebelumnya.
+            </small>
+
+          </div>
+
         </div>
+
 
         <div id="ratRec" class="recommendation-box">
-          <h3>🐀 Tikus</h3>
-          <p>Belum tersedia rekomendasi.</p>
-          <small>Menunggu data deteksi hari sebelumnya.</small>
+
+          <div class="recommendation-icon">
+            T
+          </div>
+
+          <div class="recommendation-content">
+
+            <span class="recommendation-label">
+              DETEKSI TIKUS
+            </span>
+
+            <h3>
+              Tikus
+            </h3>
+
+            <p>
+              Belum tersedia rekomendasi.
+            </p>
+
+            <small>
+              Menunggu data deteksi hari sebelumnya.
+            </small>
+
+          </div>
+
         </div>
 
+
       </div>
-    </div>
-    
-    <!-- Grafik 7 hari terakhir -->
-    <div class="card span-2">
-      <h2>Grafik 7 Hari Terakhir (Total, SIANG, MALAM)</h2>
-      <canvas id="chart7d"></canvas>
+
     </div>
 
-    <!-- Grafik 6 bulan terakhir -->
-    <div class="card span-2">
-      <h2>Grafik 6 Bulan Terakhir (Stacked SIANG/MALAM + Total)</h2>
-      <canvas id="chart6m"></canvas>
+
+    <!-- =========================
+         DAILY CHART
+    ========================== -->
+
+    <div class="card span-2 chart-card">
+
+      <div class="section-header">
+
+        <div>
+          <span class="section-label">
+            DAILY ACTIVITY
+          </span>
+
+          <h2>
+            Aktivitas Deteksi Harian
+          </h2>
+        </div>
+
+        <span class="section-info">
+          7 Hari Terakhir
+        </span>
+
+      </div>
+
+      <div class="chart-wrapper">
+        <canvas id="chart7d"></canvas>
+      </div>
+
     </div>
 
-    <!-- Komposisi deteksi -->
-    <div class="card">
-      <h2>Komposisi Deteksi (Mode)</h2>
-      <canvas id="chartMode"></canvas>
+
+    <!-- =========================
+         MONTHLY CHART
+    ========================== -->
+
+    <div class="card span-2 chart-card">
+
+      <div class="section-header">
+
+        <div>
+          <span class="section-label">
+            MONTHLY ACTIVITY
+          </span>
+
+          <h2>
+            Aktivitas Deteksi Bulanan
+          </h2>
+        </div>
+
+        <span class="section-info">
+          6 Bulan Terakhir
+        </span>
+
+      </div>
+
+      <div class="chart-wrapper">
+        <canvas id="chart6m"></canvas>
+      </div>
+
     </div>
 
-    <div class="card">
-      <h2>Komposisi Deteksi (Zona)</h2>
-      <canvas id="chartZone"></canvas>
+
+    <!-- =========================
+         COMPOSITION CHART
+    ========================== -->
+
+    <div class="card composition-card">
+
+      <div class="composition-heading">
+        <span>MODE</span>
+        <h2>Mode Deteksi</h2>
+      </div>
+
+      <div class="small-chart-wrapper">
+        <canvas id="chartMode"></canvas>
+      </div>
+
     </div>
 
-    <div class="card">
-      <h2>Komposisi Deteksi (Sensor)</h2>
-      <canvas id="chartSensor"></canvas>
+
+    <div class="card composition-card">
+
+      <div class="composition-heading">
+        <span>ZONE</span>
+        <h2>Zona Deteksi</h2>
+      </div>
+
+      <div class="small-chart-wrapper">
+        <canvas id="chartZone"></canvas>
+      </div>
+
     </div>
 
-    <div class="card">
-      <h2>Komposisi Deteksi (Aktuator)</h2>
-      <canvas id="chartActuator"></canvas>
+
+    <div class="card composition-card">
+
+      <div class="composition-heading">
+        <span>SENSOR</span>
+        <h2>Sumber Sensor</h2>
+      </div>
+
+      <div class="small-chart-wrapper">
+        <canvas id="chartSensor"></canvas>
+      </div>
+
     </div>
 
-    <!-- Log terbaru -->
-    <div class="card span-4">
-      <h2>Log Deteksi Terbaru (Timestamp • Mode • Sensor • Aktuator • RSSI)</h2>
+
+    <div class="card composition-card">
+
+      <div class="composition-heading">
+        <span>ACTUATOR</span>
+        <h2>Aktivitas Aktuator</h2>
+      </div>
+
+      <div class="small-chart-wrapper">
+        <canvas id="chartActuator"></canvas>
+      </div>
+
+    </div>
+
+
+    <!-- =========================
+         DETECTION LOG
+    ========================== -->
+
+    <div class="card span-4 log-card">
+
+      <div class="section-header">
+
+        <div>
+          <span class="section-label">
+            DETECTION LOG
+          </span>
+
+          <h2>
+            Log Deteksi Terbaru
+          </h2>
+        </div>
+
+        <span class="section-info">
+          Realtime Event
+        </span>
+
+      </div>
+
+
       <div class="table-wrap">
+
         <table>
+
           <thead>
+
             <tr>
-              <th>Datetime (WIB)</th>
+              <th>Datetime WIB</th>
               <th>TS</th>
               <th>Mode</th>
               <th>Sensor</th>
               <th>Zona</th>
               <th>Message</th>
               <th>Aktuator</th>
-              <th>Cooldown (ms)</th>
+              <th>Cooldown</th>
               <th>RSSI</th>
             </tr>
+
           </thead>
+
           <tbody id="tbody"></tbody>
+
         </table>
+
       </div>
+
     </div>
+
+
   </main>
 
+
   <script src="app.js"></script>
+
 </body>
 </html>
