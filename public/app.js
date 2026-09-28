@@ -19,10 +19,12 @@ function setKPI(kpi) {
 }
 
 function fmtHour(h) {
-  return String(h).padStart(2, "0") + ":00";
+  return String(h).padStart(2, "0") + ".00";
 }
 
 function renderRecommendation(rec) {
+
+  if (!rec || !rec.bird || !rec.rat) return;
 
   const birdRec = document.getElementById("birdRec");
   const ratRec = document.getElementById("ratRec");
@@ -30,7 +32,7 @@ function renderRecommendation(rec) {
   if (rec.bird.total > 0) {
     birdRec.innerHTML = `
       <h3>🐦 Burung</h3>
-      <p><b>🕒 ${fmtHour(rec.bird.start)} - ${fmtHour(rec.bird.end)}</b></p>
+      <p><b>🕒 ${fmtHour(rec.bird.start)} - ${fmtHour((rec.bird.end + 1) % 24)} WIB</b></p>
       <p>📊 ${rec.bird.total} deteksi</p>
       <small>Disarankan melakukan pengecekan sawah pada rentang waktu tersebut.</small>
     `;
@@ -45,7 +47,7 @@ function renderRecommendation(rec) {
   if (rec.rat.total > 0) {
     ratRec.innerHTML = `
       <h3>🐀 Tikus</h3>
-      <p><b>🕒 ${fmtHour(rec.rat.start)} - ${fmtHour(rec.rat.end)}</b></p>
+      <p><b>🕒 ${fmtHour(rec.rat.start)} - ${fmtHour((rec.rat.end + 1) % 24)} WIB</b></p>
       <p>📊 ${rec.rat.total} deteksi</p>
       <small>Disarankan melakukan pengecekan sawah pada rentang waktu tersebut.</small>
     `;
@@ -198,6 +200,7 @@ async function refreshAll() {
 
   const d = await fetchJSON(`/api/dashboard?days=${days}&months=${months}&latest=${latest}`);
   setKPI(d.kpi);
+  renderRecommendation(d.recommendation);
   renderCharts(d);
   renderTable(d.latest);
 }
